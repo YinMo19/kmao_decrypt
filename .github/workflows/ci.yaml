@@ -1,0 +1,106 @@
+on: [push, pull_request]
+name: build
+
+jobs:
+  build:
+    name: build
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        build: [linux, macos, windows]
+        include:
+          - build: linux
+            os: ubuntu-latest
+            rust: nightly
+            target: x86_64-unknown-linux-musl
+            archive-name: kmao_decrypt-linux.tar.gz
+          - build: macos
+            os: macos-latest
+            rust: nightly
+            target: x86_64-apple-darwin
+            archive-name: kmao_decrypt-macos.tar.gz
+          - build: windows
+            os: windows-2019
+            rust: nightly-x86_64-msvc
+            target: x86_64-pc-windows-msvc
+            archive-name: kmao_decrypt-windows.7z
+      fail-fast: false
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ matrix.rust }}
+          profile: minimal
+          override: true
+          target: ${{ matrix.target }}
+      
+      - name: install openssl-tools
+        if: matrix.build == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install libssl-dev cmake pkg-config musl-tools
+
+      - name: Build binary
+        run: |
+          cargo build --release --target ${{ matrix.target }} 
+        env:
+          RUST_BACKTRACE: 1
+
+      - name: Strip binary (linux and macos)
+        if: matrix.build == 'linux' || matrix.build == 'macos'
+        run: |
+          strip "target/${{ matrix.target }}/release/kmao_decrypt"
+
+      - name: Build archive
+        shell: bash
+        run: |
+          mkdir archive
+          cd archive
+          if [ "${{ matrix.build }}" = "windows" ]; then
+            cp "../target/${{ matrix.target }}/release/kmao_decrypt.exe" ./kmao_decrypt.exe
+            7z a "${{ matrix.archive-name }}" kmao_decrypt.exe 
+          else
+            cp "../target/${{ matrix.target }}/release/kmao_decrypt" ./kmao_decrypt
+            tar -czf "${{ matrix.archive-name }}" kmao_decrypt
+          fi
+      - name: Upload archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.archive-name }}
+          path: archive/${{ matrix.archive-name }}
+
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    if: ${{ startsWith(github.ref, 'refs/heads/main') }}
+    needs: [build]
+    permissions:
+      # Use to sign the release artifacts
+      id-token: write
+      # Used to upload release artifacts
+      contents: write
+      # Used to generate artifact attestation
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@v4
+      - name: Display structure of downloaded files
+        run: ls -R
+      - name: pwd
+        run: pwd
+      # - name: Generate artifact attestation
+      #   uses: actions/attest-build-provenance@v1
+      #   with:
+      #     subject-path: 'wheels-*/*'
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            kmao_decrypt-linux.tar.gz/kmao_decrypt-linux.tar.gz
+            kmao_decrypt-macos.tar.gz/kmao_decrypt-macos.tar.gz
+            kmao_decrypt-windows.7z/kmao_decrypt-windows.7z
+          draft: true
+          fail_on_unmatched_files: true
