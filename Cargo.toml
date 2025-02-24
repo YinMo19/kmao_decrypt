@@ -18,6 +18,7 @@ keywords = ["AES", "CBC", "base64", "Kmao", "QiMao"]
 [workspace.dependencies]
 kmao_decrypt = { path = "crates/kmao_decrypt" }
 tokio = { version = "1.43.0", features = ["full"] }
+openssl ={ version = "0.10.38", features = ["vendored"] }
 
 [profile.release]
 lto = true

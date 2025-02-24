@@ -7,7 +7,6 @@ authors = ["YinMo19 <me@yinmo19.top>"]
 [dependencies]
 base64 = "0.22.1"
 colored = "3.0.0"
-openssl = "0.10.71"
 rayon = "1.10.0"
 serde_json = "1.0.139"
 sqlx = { version = "0.8.3", features = [
@@ -17,3 +16,4 @@ sqlx = { version = "0.8.3", features = [
     "runtime-tokio",
 ] }
 tokio = { workspace = true}
+openssl ={ workspace = true}
