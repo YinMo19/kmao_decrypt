@@ -53,7 +53,7 @@ jobs:
       - name: Strip binary (linux and macos)
         if: matrix.build == 'linux' || matrix.build == 'macos'
         run: |
-          strip "target/${{ matrix.target }}/release/kmao_decrypt"
+          strip "target/${{ matrix.target }}/release/kmao_decrypt_bin"
 
       - name: Build archive
         shell: bash
@@ -61,11 +61,11 @@ jobs:
           mkdir archive
           cd archive
           if [ "${{ matrix.build }}" = "windows" ]; then
-            cp "../target/${{ matrix.target }}/release/kmao_decrypt.exe" ./kmao_decrypt.exe
-            7z a "${{ matrix.archive-name }}" kmao_decrypt.exe 
+            cp "../target/${{ matrix.target }}/release/kmao_decrypt_bin.exe" ./kmao_decrypt_bin.exe
+            7z a "${{ matrix.archive-name }}" kmao_decrypt_bin.exe 
           else
-            cp "../target/${{ matrix.target }}/release/kmao_decrypt" ./kmao_decrypt
-            tar -czf "${{ matrix.archive-name }}" kmao_decrypt
+            cp "../target/${{ matrix.target }}/release/kmao_decrypt_bin" ./kmao_decrypt_bin
+            tar -czf "${{ matrix.archive-name }}" kmao_decrypt_bin
           fi
       - name: Upload archive
         uses: actions/upload-artifact@v4
