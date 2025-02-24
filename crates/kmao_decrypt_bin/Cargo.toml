@@ -1,0 +1,9 @@
+[package]
+name = "kmao_decrypt_bin"
+version = "0.1.0"
+edition = "2024"
+authors = ["YinMo19 <me@yinmo19.top>"]
+
+[dependencies]
+kmao_decrypt = { workspace = true }
+tokio ={ workspace = true}

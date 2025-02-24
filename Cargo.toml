@@ -1,18 +1,25 @@
-[package]
-name = "kmao_decrypt"
+[workspace]
+members = ["crates/kmao_decrypt", "crates/kmao_decrypt_bin"]
+resolver = "2"
+
+[workspace.package]
 version = "0.1.0"
+authors = ["YinMo19 <me@YinMo19.top>"]
 edition = "2024"
 
-[dependencies]
-base64 = "0.22.1"
-colored = "3.0.0"
-openssl = "0.10.71"
-rayon = "1.10.0"
-serde_json = "1.0.138"
-sqlx = { version = "0.8.3", features = [
-    "derive",
-    "sqlite",
-    "macros",
-    "runtime-tokio",
-] }
+description = "QiMao Novel encrypt file dump."
+homepage = "https://github.com/YinMo19/kmao_decrypt"
+documentation = "https://docs.rs/kmao_decrypt"
+repository = "https://github.com/YinMo19/kmao_decrypt"
+license = "MIT"
+readme = "README.md"
+keywords = ["AES", "CBC", "base64", "Kmao", "QiMao"]
+
+[workspace.dependencies]
+kmao_decrypt = { path = "crates/kmao_decrypt" }
 tokio = { version = "1.43.0", features = ["full"] }
+
+[profile.release]
+lto = true
+opt-level = "s"
+strip = true

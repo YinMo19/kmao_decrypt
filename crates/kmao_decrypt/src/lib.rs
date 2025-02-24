@@ -1,5 +1,8 @@
+#![doc = include_str!("../../../README.md")]
+
 use base64::Engine;
 use base64::engine::general_purpose;
+use colored::*;
 use openssl::symm::{Cipher, Crypter, Mode};
 use rayon::prelude::*;
 use serde_json::Value;
@@ -10,6 +13,8 @@ use std::fs::{self, File};
 use std::io::{self, Read, Write};
 use std::path::Path;
 
+/// struct for used chapter info.
+/// It used for select chapter from sqlite database.
 #[derive(FromRow)]
 pub struct Chapter {
     #[sqlx(rename = "ZBOOKID")]
@@ -22,7 +27,8 @@ pub struct Chapter {
     chapter_id: String,
 }
 
-#[derive(FromRow)]
+/// The Book info.
+#[derive(FromRow, Clone)]
 pub struct Book {
     #[sqlx(rename = "ZBOOKID")]
     pub book_id: String,
@@ -46,6 +52,7 @@ pub fn write_bytes_to_file<P: AsRef<Path>>(path: P, data: &[u8]) -> Result<(), i
     Ok(())
 }
 
+/// A simple AES-CBC decryption function.
 pub fn decrypt_aes_cbc(
     data: &[u8],
     key: &[u8],
@@ -67,6 +74,7 @@ pub fn decrypt_aes_cbc(
     Ok(decrypted_data)
 }
 
+/// Decrypt all files in a directory.
 pub fn from_dir(path: &str, out_path: &str) -> Result<(), Box<dyn std::error::Error>> {
     let key = b"242ccb8230d709e1";
     let iv = b"6443338373714701";
@@ -105,6 +113,7 @@ pub fn from_dir(path: &str, out_path: &str) -> Result<(), Box<dyn std::error::Er
     Ok(())
 }
 
+/// Decrypt a file using AES-CBC.
 pub fn decrypt_file(path: &Path, key: &[u8], iv: &[u8]) -> Result<Vec<u8>, Box<dyn Error>> {
     let encrypted_data = read_file_to_string(path)?;
     let encrypted_bytes = general_purpose::STANDARD
@@ -114,6 +123,8 @@ pub fn decrypt_file(path: &Path, key: &[u8], iv: &[u8]) -> Result<Vec<u8>, Box<d
     Ok(decrypt_aes_cbc(&encrypted_bytes, key, iv)?)
 }
 
+/// From the cached json file, which refered the chapter list,
+/// and auto join the chapter content into one file.
 pub fn chapters_join(
     chapter_list_path: &Path,
     source_path: &Path,
@@ -153,11 +164,14 @@ pub fn chapters_join(
     Ok(())
 }
 
+
+/// Same function as `chapters_join` but use sqlite database to get the chapter list.
+/// It should make sure you have the sqlite database.
 pub async fn chapters_join_sql(
     sql_path: &Path,
     source_path: &Path,
     novel: &Book,
-) -> Result<(), Box<dyn Error>> {
+) -> Result<Vec<(i32, String, String)>, Box<dyn Error>> {
     let options = SqliteConnectOptions::new().filename(sql_path);
     let pool = SqlitePool::connect_with(options).await?;
 
@@ -190,14 +204,98 @@ pub async fn chapters_join_sql(
         .collect::<Vec<_>>();
 
     novel_content.sort_unstable_by_key(|chapter| chapter.0);
+    Ok(novel_content)
+}
 
-    let novel_name = format!("{}.txt", novel.book_name);
+
+/// Write the novel content to a file.
+pub fn write_to_book(
+    selected_book: &Book,
+    novel_content: Vec<(i32, String, String)>,
+) -> Result<(), Box<dyn Error>> {
+    let novel_name = format!("{}.txt", selected_book.book_name);
     let mut novel_file = File::create(novel_name).unwrap();
-    writeln!(novel_file, "{}\n{}\n", novel.book_name, novel.book_author)?;
+    writeln!(
+        novel_file,
+        "{}\n{}\n",
+        selected_book.book_name, selected_book.book_author
+    )
+    .expect("cannot write bookname and author.");
     for (_, chapter_name, mut file_content) in novel_content {
         file_content = file_content.replace("\n", "\n\n");
-        writeln!(novel_file, "{}\n\n{}\n\n", chapter_name, file_content)?;
+        writeln!(novel_file, "{}\n\n{}\n\n", chapter_name, file_content)
+            .expect("cannot write bookname and author.");
     }
 
     Ok(())
+}
+
+
+/// Make prompt to select the book from the database.
+/// It will check all the books you have downloaded.
+pub async fn select_chapters_from_sql(
+    database_path: &Path,
+    book_path: &Path,
+) -> Result<Book, Box<dyn Error>> {
+    let options = SqliteConnectOptions::new().filename(database_path);
+    let pool = SqlitePool::connect_with(options).await?;
+
+    let query = r#"select ZBOOKID, ZBOOKNAME, ZBOOKAUTHOR from ZBOOK"#;
+    let all_books: Vec<Book> = sqlx::query_as(query).fetch_all(&pool).await?;
+
+    let book_downloaded = Path::new(book_path)
+        .read_dir()?
+        .map(|entry| {
+            entry
+                .unwrap()
+                .path()
+                .file_name()
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .to_string()
+        })
+        .collect::<Vec<String>>();
+
+    let mut book_to_select = Vec::new();
+    for book in &book_downloaded {
+        if book.starts_with(".") {
+            continue;
+        }
+        for recorded_book in all_books.clone() {
+            if &recorded_book.book_id == book {
+                book_to_select.push(recorded_book);
+                break;
+            }
+        }
+    }
+
+    Ok(book_to_select[get_prompt(&book_to_select)].clone())
+}
+
+
+/// Make prompts.
+fn get_prompt(book_to_select: &Vec<Book>) -> usize {
+    for (seq, book) in book_to_select.iter().enumerate() {
+        println!(
+            "{}. {},{}",
+            seq,
+            book.book_name.green().bold(),
+            book.book_author.blue().bold()
+        );
+    }
+    print!(
+        "{}\n",
+        "Please select the book you want to decrypt:"
+            .purple()
+            .bold()
+    );
+    let mut input = String::new();
+    std::io::stdin()
+        .read_line(&mut input)
+        .expect("failed to read line");
+    input
+        .trim()
+        .parse::<usize>()
+        .expect("please input a number.")
 }
