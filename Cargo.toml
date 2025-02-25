@@ -16,7 +16,7 @@ readme = "README.md"
 keywords = ["AES", "CBC", "base64", "Kmao", "QiMao"]
 
 [workspace.dependencies]
-kmao_decrypt = { path = "crates/kmao_decrypt" }
+kmao_decrypt = { path = "crates/kmao_decrypt", version = "0.1.0"}
 tokio = { version = "1.43.0", features = ["full"] }
 openssl ={ version = "0.10.38", features = ["vendored"] }
 
