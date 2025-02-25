@@ -17,8 +17,6 @@ use std::path::Path;
 /// It used for select chapter from sqlite database.
 #[derive(FromRow)]
 pub struct Chapter {
-    #[sqlx(rename = "ZBOOKID")]
-    book_id: String,
     #[sqlx(rename = "ZCHAPTERINDEX")]
     chapter_index: i32,
     #[sqlx(rename = "ZCHAPTERNAME")]
@@ -68,7 +66,7 @@ pub fn decrypt_aes_cbc(
 
     count += decrypter
         .finalize(&mut decrypted_data[count..])
-        .expect("padding and finalize failed."); // 自动处理 PKCS#5 填充
+        .expect("padding and finalize failed."); // default PKCS#5 padding
 
     decrypted_data.truncate(count);
     Ok(decrypted_data)
@@ -116,6 +114,10 @@ pub fn from_dir(path: &str, out_path: &str) -> Result<(), Box<dyn std::error::Er
 /// Decrypt a file using AES-CBC.
 pub fn decrypt_file(path: &Path, key: &[u8], iv: &[u8]) -> Result<Vec<u8>, Box<dyn Error>> {
     let encrypted_data = read_file_to_string(path)?;
+
+    // firstly decode the base64 string.
+    // the base64::decode function was deprecated,
+    // so we use the general_purpose::STANDARD instead.
     let encrypted_bytes = general_purpose::STANDARD
         .decode(encrypted_data)
         .expect(&format!("base64 decode failed for {path:?}"));
@@ -136,6 +138,7 @@ pub fn chapters_join(
     let key = b"242ccb8230d709e1";
     let iv = b"6443338373714701";
 
+    // parsing the json file.
     for chapter in chapter_lists["data"]["chapter_lists"].as_array().unwrap() {
         let chapter_id = chapter["id"].as_str().unwrap();
         let chapter_name = chapter["title"].as_str().unwrap();
@@ -164,7 +167,6 @@ pub fn chapters_join(
     Ok(())
 }
 
-
 /// Same function as `chapters_join` but use sqlite database to get the chapter list.
 /// It should make sure you have the sqlite database.
 pub async fn chapters_join_sql(
@@ -175,18 +177,27 @@ pub async fn chapters_join_sql(
     let options = SqliteConnectOptions::new().filename(sql_path);
     let pool = SqlitePool::connect_with(options).await?;
 
-    let query = r#"select ZBOOKID, ZCHAPTERINDEX, ZCHAPTERNAME, ZCHAPTERID from ZCHAPTER"#;
-    let chapters: Vec<Chapter> = sqlx::query_as(query).fetch_all(&pool).await?;
+    // select the book's info chosen before.
+    let query = r#"
+        SELECT 
+            ZCHAPTERINDEX, ZCHAPTERNAME, ZCHAPTERID 
+        FROM 
+            ZCHAPTER 
+        WHERE 
+            ZBOOKID = ?
+    "#;
+    let select_chapters: Vec<Chapter> = sqlx::query_as(query)
+        .bind(&novel.book_id)
+        .fetch_all(&pool)
+        .await?;
 
-    let select_chapters = chapters
-        .iter()
-        .filter(|&chapter| chapter.book_id == novel.book_id)
-        .collect::<Vec<&Chapter>>();
-
-    // let mut novel_content = Vec::new();
+    // just decrypt the file
     let key = b"242ccb8230d709e1";
     let iv = b"6443338373714701";
 
+    // the novel content is split by chapter into so many files,
+    // so we use par_iter to parallel the decryption process.
+    // But accurately, the decryption process is not very fast(contrast with the normal method).
     let mut novel_content = select_chapters
         .into_par_iter()
         .map(|chapter| {
@@ -203,10 +214,10 @@ pub async fn chapters_join_sql(
         })
         .collect::<Vec<_>>();
 
+    // after the parallel process, we sort the novel_content by chapter_index.
     novel_content.sort_unstable_by_key(|chapter| chapter.0);
     Ok(novel_content)
 }
-
 
 /// Write the novel content to a file.
 pub fn write_to_book(
@@ -222,6 +233,8 @@ pub fn write_to_book(
     )
     .expect("cannot write bookname and author.");
     for (_, chapter_name, mut file_content) in novel_content {
+        // in almost the eBook, the lines should be parsed by \n\n.
+        // this behavior is same as the markdown.
         file_content = file_content.replace("\n", "\n\n");
         writeln!(novel_file, "{}\n\n{}\n\n", chapter_name, file_content)
             .expect("cannot write bookname and author.");
@@ -229,7 +242,6 @@ pub fn write_to_book(
 
     Ok(())
 }
-
 
 /// Make prompt to select the book from the database.
 /// It will check all the books you have downloaded.
@@ -240,6 +252,27 @@ pub async fn select_chapters_from_sql(
     let options = SqliteConnectOptions::new().filename(database_path);
     let pool = SqlitePool::connect_with(options).await?;
 
+    // Actually it should be use a `select ... from ... where IN (xxx, xxx, ...);`,
+    // but the reality is the database is so small,
+    // and useing rust filter instead of sql filter is just Ok.
+    // If we just using the dir name of .../Documents/Book/<book_name> to select,
+    // we should ensure the user have NOT adding some weird file in it.
+    // just like MacOS users, they will add a .DS_Store in the dir
+    // (if they use finder explore the dir).
+    //
+    // the tech we mention above has a example below.
+    // ```rs
+    // let query = format!(
+    //     "SELECT * FROM books WHERE title IN ({})",
+    //     chunk.iter().map(|_| "?").collect::<Vec<_>>().join(", ")
+    // );
+    // let mut query_builder = sqlx::query_as::<_, Book>(&query);
+    // for title in chunk {
+    //     query_builder = query_builder.bind(title);
+    // }
+    //
+    // let books = query_builder.fetch_all(&conn).await?;
+    // ```
     let query = r#"select ZBOOKID, ZBOOKNAME, ZBOOKAUTHOR from ZBOOK"#;
     let all_books: Vec<Book> = sqlx::query_as(query).fetch_all(&pool).await?;
 
@@ -257,22 +290,13 @@ pub async fn select_chapters_from_sql(
         })
         .collect::<Vec<String>>();
 
-    let mut book_to_select = Vec::new();
-    for book in &book_downloaded {
-        if book.starts_with(".") {
-            continue;
-        }
-        for recorded_book in all_books.clone() {
-            if &recorded_book.book_id == book {
-                book_to_select.push(recorded_book);
-                break;
-            }
-        }
-    }
+    let book_to_select: Vec<Book> = all_books
+        .into_iter()
+        .filter(|book| book_downloaded.contains(&book.book_id))
+        .collect();
 
     Ok(book_to_select[get_prompt(&book_to_select)].clone())
 }
-
 
 /// Make prompts.
 fn get_prompt(book_to_select: &Vec<Book>) -> usize {
