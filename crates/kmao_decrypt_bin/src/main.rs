@@ -1,3 +1,4 @@
+#![doc = include_str!("../README.md")]
 /// A simple example of decrypt KMao Novel.
 /// You should run this example in your macOS.
 /// And you should put the `kmao_decrypt` in the
@@ -33,10 +34,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
     .await?;
 
     // write the novel content to a file.
-    // it'll write the basic info, which read from database, 
+    // it'll write the basic info, which read from database,
     // just like the book name, author.
     // and all the chapters sort by chapter id.
     let _ = write_to_book(&selected_book, novel_content)?;
-    
+
     Ok(())
 }
