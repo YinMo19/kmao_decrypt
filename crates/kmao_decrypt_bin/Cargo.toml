@@ -1,8 +1,23 @@
 [package]
 name = "kmao_decrypt_bin"
-version = "0.1.0"
-edition = "2024"
-authors = ["YinMo19 <me@yinmo19.top>"]
+version = { workspace = true }
+authors = { workspace = true }
+edition = { workspace = true }
+
+description = { workspace = true }
+homepage = { workspace = true }
+documentation = { workspace = true }
+repository = { workspace = true }
+license = { workspace = true }
+readme = { workspace = true }
+keywords = { workspace = true }
+exclude = [
+    ".editorconfig",
+    ".github/**/*",
+    "res/*",
+    "examples/*",
+    "*.ncm"
+]
 
 [dependencies]
 kmao_decrypt = { workspace = true }
