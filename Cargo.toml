@@ -3,7 +3,7 @@ members = ["crates/kmao_decrypt", "crates/kmao_decrypt_bin"]
 resolver = "2"
 
 [workspace.package]
-version = "0.1.0"
+version = "0.2.0"
 authors = ["YinMo19 <me@YinMo19.top>"]
 edition = "2024"
 
@@ -16,7 +16,7 @@ readme = "README.md"
 keywords = ["AES", "CBC", "base64", "Kmao", "QiMao"]
 
 [workspace.dependencies]
-kmao_decrypt = { path = "crates/kmao_decrypt", version = "0.1.0"}
+kmao_decrypt = { path = "crates/kmao_decrypt", version = "0.2.0"}
 tokio = { version = "1.43.0", features = ["full"] }
 openssl ={ version = "0.10.38", features = ["vendored"] }
 
